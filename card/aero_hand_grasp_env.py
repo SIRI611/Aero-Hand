@@ -216,12 +216,12 @@ class AeroHandGraspEnv(DirectRLEnv):
         self.actions = torch.clamp(actions, -1.0, 1.0)
 
     def _apply_action(self) -> None:
-        # map each actuator's normalized command to its own radian range, then broadcast
-        # it out to every joint that actuator drives (ACTUATOR_TO_JOINTS / TetherIA's
-        # "compact representation" — see module docstring at the top of this file).
-        act_targets = self._act_lower + (self.actions + 1.0) * 0.5 * (self._act_upper - self._act_lower)
-        joint_targets = act_targets @ self._act_to_joint_matrix.T   # (num_envs, 7) -> (num_envs, 16)
+        actuator_targets = self._grasp_actuator_pos + self.actions * self._action_delta_scale
+        actuator_targets = torch.clamp(actuator_targets, self._actuator_lower, self._actuator_upper)
+        joint_targets = actuator_targets @ self._coupling_matrix
         self.hand.set_joint_position_target(joint_targets, joint_ids=self._joint_ids)
+        self._last_actuator_targets = actuator_targets
+        self._last_joint_targets = joint_targets   # <- add this line
 
     def _get_observations(self) -> dict:
         self.joint_pos = self.hand.data.joint_pos
@@ -262,7 +262,7 @@ class AeroHandGraspEnv(DirectRLEnv):
             dim=-1,
         )
 
-        # debug print of the observation components for the first env only
+        # debug print of the observation components for the first env only TODO: remove before trainingonents for the first env only
         if obs.shape[0] > 0:
             env0 = 0
             print("=" * 70)

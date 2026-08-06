@@ -16,6 +16,13 @@ is a cube-rotation task, not grasp-hold — they don't have a grasp task release
 the core conventions, tendon-space control and torque/energy-aware rewards, carry
 over regardless of task or object.)
 
+There is also a **hardware path**, kept entirely in `real_hand/`:
+`real_hand/aero_hand_bridge.py` drives the physical hand over ROS2 using the same
+7-actuator convention the sim policy outputs, so a policy trained here can be pushed
+to the real hand without changing units or ordering. Nothing in `real_hand/` imports
+Isaac Lab, and nothing in the scene variants imports ROS2 — the split is clean in
+both directions. See [Running on the real hand](#running-on-the-real-hand).
+
 ## Shared vs. per-object, at a glance
 
 | Shared across every object | Per-object (tuned separately for mug/bottle/card/pen) |
@@ -34,8 +41,31 @@ over regardless of task or object.)
 | `aero_hand_scene_cfg.py` | Thin `InteractiveSceneCfg` wrapper — ground plane, light, N cloned hands. Not object-specific. |
 | `<object>_cfg.py` | The graspable object for one variant: USD path, mass, spawn offset relative to the hand. One per object — `mug_cfg.py`, `bottle_cfg.py`, `card_cfg.py`, `pen_cfg.py`. |
 | `<object>_grasp_env.py` | The `DirectRLEnv` for that variant — action space, observation space, reward, reset logic. Same structure in every variant, with the object's name substituted into the object-specific fields (see [Rewards](#rewards)). |
-| `test.py` | Standalone script that spawns N envs and holds the tuned grasp pose in the viewport for whichever variant's env module it imports. No RL loop, just for visually checking a pose. |
+| `test.py` | Standalone script that spawns N envs and holds the tuned grasp pose in the viewport for whichever variant's env module it imports. No RL loop, just for visually checking a pose. **In `mug/` this is named `test_sim.py`**, to keep it distinct from the real-hand `real_hand/test_ros.py`; `pen/`, `card/`, and `bottle/` still use `test.py`. Worth renaming the other three to match. |
 | `run_aero_hand_parallel.py` | Standalone hand-*only* sanity check — no object, no `DirectRLEnv`, no RL action space. Builds the scene directly from `AeroHandSceneCfg` with the raw `InteractiveScene`/`SimulationContext` APIs and drives all 16 joints with one shared sinusoidal open/close curl, ignoring the 7-tendon grouping and per-joint limits entirely. See [Sanity-checking the scene](#sanity-checking-the-scene). |
+
+### Hardware — `real_hand/`
+
+Everything that talks to the **physical** hand over ROS2 lives here, and nothing
+else does. No Isaac Lab imports in this directory, no ROS2 imports in the scene
+variants. It is object-agnostic — the hand doesn't care what it's holding — so it
+sits at the top level rather than being copied into each variant.
+
+| File | What it is |
+|---|---|
+| `real_hand/aero_hand_bridge.py` | Abstraction between 7-actuator control values (radians) and the real hand over ROS2. Hides joint-space expansion, unit conversion, and ROS2 plumbing. Also reconstructs joint positions from motor angles by inverting the tendon model — the hardware has no joint encoders and publishes only 7 motor angles. Its coupling constants must stay identical to the ones in every `<object>_grasp_env.py`. |
+| `real_hand/test_ros.py` | Choreographed demo on the real hand — finger wave, counting 1→5, thumb opposition, piano taps, slow clench. Poses are interpolated and streamed at 100 Hz to match the hand's own firmware loop. Doubles as an end-to-end check that commands and feedback round-trip. |
+
+Variant scripts run from their own directory, so import the bridge with:
+
+```python
+import pathlib, sys
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "real_hand"))
+from aero_hand_bridge import AeroHandBridge
+```
+
+Setup, ROS2 plumbing, control rates, and troubleshooting for the physical hand are
+in [Running on the real hand](#running-on-the-real-hand).
 
 ## The 7-tendon action space
 
@@ -232,3 +262,170 @@ Every variant's `AeroHandGraspEnv` behaves like any other Isaac Lab `DirectRLEnv
 `action_space = 7`, `observation_space = 68` — so each one drops into whatever
 PPO/training script you're already using, just with a smaller action dimension than
 the original 16-joint version.
+
+## Running on the real hand
+
+The bridge speaks the same 7-actuator, radians, `ACTUATOR_NAMES`-ordered convention
+the sim policy outputs, so nothing needs converting between the two.
+
+### One-time setup
+
+Requires ROS2 Humble, the `aero-hand-open` workspace built with `colcon`, and the
+`aero_open_sdk` Python package installed.
+
+**The SDK needs a patch to talk to the hand over USB.** The Aero Hand enumerates as
+an ESP32-S3 native USB-JTAG-Serial device, where **RTS drives the chip's reset
+line** — and pyserial asserts both DTR and RTS when it opens a port. The chip
+therefore sits held in reset and never answers, and every command dies with:
+
+```
+ACK (opcode 0x31) not received within 2.0s
+```
+
+Opening with RTS already low does *not* fix it; the chip has to actually see the
+reset released, so the transition is what matters. `AeroHand.__init__` needs a wake
+sequence before its first command:
+
+```python
+self.ser.dtr, self.ser.rts = True, True
+time.sleep(0.3)
+self.ser.dtr, self.ser.rts = False, False   # release EN -> chip boots
+time.sleep(0.3)
+self.ser.dtr, self.ser.rts = True, False    # run mode
+time.sleep(1.0)                             # let it boot before talking
+```
+
+Baudrate is irrelevant here — it's native USB-CDC, and 115200 behaves identically to
+921600.
+
+Note the SDK installs as a **non-editable copy** into site-packages by default, so
+editing the repo has no effect until you re-point the install:
+
+```bash
+pip install -e /path/to/aero-hand-open/sdk
+```
+
+### Starting the hardware node
+
+```bash
+ros2 run aero_hand_open aero_hand_node --ros-args \
+    -p right_port:=auto -p control_space:=joint
+```
+
+`right_port:=auto` resolves through `/dev/serial/by-id/usb-Espressif_*`, which is
+the robust choice — the wake sequence resets the chip, so it re-enumerates and the
+`/dev/ttyACM<N>` number changes. Never hardcode `/dev/ttyACM0`.
+
+**Only run one node at a time.** A second instance resets the chip out from under
+the first, which then holds a dead device node.
+
+### Network isolation
+
+If you have a FastDDS unicast profile (`FASTRTPS_DEFAULT_PROFILES_FILE`) pointing
+discovery at another machine, you will see *that* machine's hand instead of your
+own — including being able to command it. The symptom is a topic list that looks
+correct while no data ever arrives, because `avoid_builtin_multicast` plus an
+`initialPeersList` aimed elsewhere lets participants match over shared memory
+without endpoint discovery completing:
+
+```
+sequence size exceeds remaining buffer
+RuntimeError: No feedback from hand — is aero_hand_node running?
+```
+
+For local-only operation:
+
+```bash
+unset FASTRTPS_DEFAULT_PROFILES_FILE
+export ROS_LOCALHOST_ONLY=1
+ros2 daemon stop        # the daemon caches discovery config
+```
+
+`.bashrc` makes this the default, with the remote peer available via
+`AERO_REMOTE=1`. Shell startup files only apply to **newly opened** terminals — a
+stale terminal is the usual cause of this failing after it was "fixed."
+
+### The bridge API
+
+```python
+with AeroHandBridge() as hand:
+    hand.send_actuator_positions([0.0, 0.3, 0.35, 0.6, 0.6, 0.6, 0.6])
+    hand.spin_once(timeout_sec=0.0)
+
+    actuators = hand.get_actuator_feedback()   # 7,  radians — same space as the command
+    joints    = hand.get_joint_feedback()      # 16, radians, JOINT_NAMES order
+    motors    = hand.get_motor_feedback()      # 7,  radians — raw hardware
+    currents  = hand.get_actuator_current_feedback()   # 7, mA — torque proxy
+```
+
+Per-actuator travel, derived from the USD joint limits and the coupling ratios
+(`send_actuator_positions` clamps to these, silently):
+
+| Actuator | Index | Upper limit (rad) |
+|---|---|---|
+| `thumb_abduction_actuator` | 0 | 1.745 |
+| `thumb_flex_actuator` | 1 | 0.956 |
+| `thumb_tendon_actuator` | 2 | 2.618 |
+| `index` / `middle` / `ring` / `pinky` | 3–6 | 1.571 |
+
+**The hardware has no joint encoders.** It publishes only `ActuatorStates` — 7 raw
+*motor* angles in degrees — and the SDK's `get_joint_positions()` is an
+unimplemented stub. `get_joint_feedback()` reconstructs joint positions by
+inverting the tendon model. Verified against the SDK's own forward model with a
+worst round-trip error of **1.1e-16**, but it is still a model estimate: tendon
+stretch, and an object physically blocking a finger, are both invisible to it. For
+contact detection use `get_actuator_current_feedback()`, which is real sensing.
+
+Motor space and actuator space are *not* interchangeable — the finger tendon gain
+is `22.28386 / 9.0 ≈ 2.476`, so commanding `0.8` reads back `1.9592` in raw motor
+radians. `get_actuator_feedback()` returns the value directly comparable to what you
+sent; `get_motor_feedback()` returns the raw reading. Expect tracking residuals of
+0.5–2% on the fingers and up to ~0.056 rad on the thumb, which is ordinary servo
+error and tendon compliance rather than a units problem — the thumb is worse because
+it is the cross-coupled chain with the tightest limit.
+
+### Control rates
+
+| | Rate | Where it's set |
+|---|---|---|
+| Real hand sensing | **100 Hz** | `feedback_frequency` param; firmware sync-read task at `pdMS_TO_TICKS(10)` |
+| Real hand commands | event-driven, unthrottled | written on every `JointControl` message |
+| Sim policy | **60 Hz** | `sim.dt = 1/120` with `decimation = 2` |
+
+Measured 100.01 Hz feedback, holding steady even while commanding at 800 Hz. That
+measures the ROS/USB path, *not* servo actuation — the node publishes whatever is in
+the firmware's `gMetrics` buffer, so starved servo readings would go stale without
+the publish rate ever dropping. Commands and sensing share a 1 Mbps servo bus behind
+a mutex, and the read task uses a **try-lock** that skips its cycle when control
+holds the bus, so commands have priority over sensing by design. There is nothing to
+gain above 100 Hz.
+
+The 60 Hz sim vs 100 Hz hardware gap matters for sim-to-real. Align them with
+`decimation = 1` (120 Hz) or by dropping `feedback_frequency` to 60; commanding a
+100 Hz hand at 60 Hz is otherwise fine, since commands latch until the next one.
+
+### Demo
+
+```bash
+python3 real_hand/test_ros.py
+```
+
+Finger wave, counting 1→5, rock on, thumbs up, thumb opposition, piano taps, and a
+slow clench — roughly 25 s. Poses are interpolated with `smoothstep` easing and
+streamed at 100 Hz to match the hand's own loop, rather than sent as step targets
+the servos have to chase. `Ctrl+C` glides back to an open palm instead of freezing
+mid-pose.
+
+The `PINCH` triples (thumb abduction/flexion/curl per finger) are geometric
+estimates of fingertip contact, not measured — trim them if a pinch misses or
+collides on your unit.
+
+### Troubleshooting
+
+| Symptom | Cause |
+|---|---|
+| `ACK (opcode 0x31) not received` | SDK missing the DTR/RTS wake sequence, or SDK installed non-editable so the patch isn't live |
+| `No feedback from hand` + `sequence size exceeds remaining buffer` | Stale terminal still has the FastDDS unicast profile; open a new shell and `ros2 daemon stop` |
+| Topics listed but no data | Same as above — participants match over shared memory while endpoint discovery never completes |
+| Node starts, then reads fail | Two nodes running; the second reset the chip and it re-enumerated to a new `/dev/ttyACM<N>` |
+| Feedback ~2.5× the commanded value | Reading `get_motor_feedback()` where `get_actuator_feedback()` was meant |

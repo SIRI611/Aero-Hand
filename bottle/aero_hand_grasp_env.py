@@ -182,11 +182,6 @@ class AeroHandGraspEnv(DirectRLEnv):
         self._act_upper = torch.tensor([math.radians(d) for d in act_upper_deg], device=self.device)  # (7,)
         self._grasp_actuation_pos = torch.tensor(grasp_actuation_pos, device=self.device)    # (7,)
 
-        print("=" * 70)
-        print("Converted 16D grasp pose into 7D actuator action array:")
-        print([f"{v:.3f}" for v in self._grasp_actuation_pos.tolist()])
-        print("=" * 70)
-
         self._last_action = torch.zeros(self.num_envs, num_act, device=self.device)
 
         self.joint_pos = self.hand.data.joint_pos
@@ -216,12 +211,43 @@ class AeroHandGraspEnv(DirectRLEnv):
         self.actions = torch.clamp(actions, -1.0, 1.0)
 
     def _apply_action(self) -> None:
-        actuator_targets = self._grasp_actuator_pos + self.actions * self._action_delta_scale
-        actuator_targets = torch.clamp(actuator_targets, self._actuator_lower, self._actuator_upper)
-        joint_targets = actuator_targets @ self._coupling_matrix
+        # map each actuator's normalized command to its own radian range, then broadcast
+        # it out to every joint that actuator drives (ACTUATOR_TO_JOINTS / TetherIA's
+        # "compact representation" — see module docstring at the top of this file).
+        act_targets = self._act_lower + (self.actions + 1.0) * 0.5 * (self._act_upper - self._act_lower)
+        joint_targets = act_targets @ self._act_to_joint_matrix.T   # (num_envs, 7) -> (num_envs, 16)
         self.hand.set_joint_position_target(joint_targets, joint_ids=self._joint_ids)
-        self._last_actuator_targets = actuator_targets
-        self._last_joint_targets = joint_targets   # <- add this line
+
+        # persisted so external scripts (e.g. the ROS2 sim-to-real bridge) can read
+        # exactly what was commanded this step -- shape (num_envs, 16), columns in
+        # self._joint_names order. This is the *commanded* target, not the achieved
+        # joint_pos -- deliberately, so what reaches real hardware matches what the
+        # policy/action actually asked for, same as it would from a real controller.
+        self.joint_targets = joint_targets
+
+        # debug print of the actual 7-dof control signal for the first env only.
+        # Compare against joint_pos in _get_observations()'s debug print: joint_targets
+        # below are hard duplicates within each actuator's group, every step, no
+        # exceptions -- that's the real 7-dof constraint, enforced here. joint_pos is
+        # the *achieved* physics state (16 independently PD-controlled joints) and can
+        # legitimately drift apart from these targets, and from each other -- see the
+        # explanation in chat for why. NOTE: _apply_action runs once per physics
+        # substep (decimation=2), so this prints twice per env.step(), not once.
+        # Remove before training -- .item()/.tolist() force a GPU->CPU sync every call.
+        if joint_targets.shape[0] > 0:
+            env0 = 0
+            print("=" * 70)
+            print("_apply_action() debug for env 0 -- this IS the 7-dof control signal")
+            print("actions (raw, normalized [-1,1]):", [f"{v:.3f}" for v in self.actions[env0].tolist()])
+            print("act_targets (radians, one per actuator):")
+            for name, val in zip(ACTUATOR_NAMES, act_targets[env0].tolist()):
+                print(f"    {name:28s} {val:.3f}")
+            print("joint_targets (radians, broadcast to all 16 -- grouped by actuator):")
+            for name in ACTUATOR_NAMES:
+                joints = ACTUATOR_TO_JOINTS[name]
+                vals = {j: f"{joint_targets[env0, self._joint_names.index(j)].item():.3f}" for j in joints}
+                print(f"    {name:28s} {vals}")
+            print("=" * 70)
 
     def _get_observations(self) -> dict:
         self.joint_pos = self.hand.data.joint_pos
@@ -261,23 +287,6 @@ class AeroHandGraspEnv(DirectRLEnv):
             ),
             dim=-1,
         )
-
-        # debug print of the observation components for the first env only TODO: remove before trainingonents for the first env only
-        if obs.shape[0] > 0:
-            env0 = 0
-            print("=" * 70)
-            print("_get_observations() debug for env 0")
-            print("joint_pos:", [f"{v:.3f}" for v in joint_pos[env0].tolist()])
-            print("joint_vel:", [f"{v:.3f}" for v in joint_vel[env0].tolist()])
-            print("joint_torque:", [f"{v:.3f}" for v in joint_torque[env0].tolist()])
-            print("last_action:", [f"{v:.3f}" for v in self._last_action[env0].tolist()])
-            print("bottle_pos_rel:", [f"{v:.3f}" for v in bottle_pos_rel[env0].tolist()])
-            print("bottle_lin_vel:", [f"{v:.3f}" for v in bottle_lin_vel[env0].tolist()])
-            print("bottle_ang_vel:", [f"{v:.3f}" for v in bottle_ang_vel[env0].tolist()])
-            print("bottle_quat:", [f"{v:.3f}" for v in bottle_quat[env0].tolist()])
-            print("obs:", [f"{v:.3f}" for v in obs[env0].tolist()])
-            print("=" * 70)
-
         return {"policy": obs}
 
     def _get_rewards(self) -> torch.Tensor:

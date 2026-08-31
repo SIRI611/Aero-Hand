@@ -1,0 +1,173 @@
+body {
+  text-align: center;
+  margin: 0;
+  background: linear-gradient(to right, rgb(255, 65, 108), rgb(255, 75, 43));
+  color: #fff;
+  overflow-x: hidden;
+  font-family: "Poppins", sans-serif;
+}
+
+.body-container {
+  position: relative;
+}
+
+h1 {
+  font-size: 7ch;
+}
+
+h2 {
+  font-size: 6ch;
+}
+
+h3 {
+  font-size: 3.5ch;
+}
+
+p {
+  font-size: 3ch;
+}
+
+a {
+  text-decoration: none;
+}
+
+.bold {
+  font-weight: 600;
+}
+
+a.btn {
+  padding: 0.5rem;
+  border-radius: 0.5rem;
+  transition: background 300ms ease-in;
+}
+
+.navbar {
+  padding: 1rem 0;
+  position: sticky;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  margin-bottom: 3rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: rgba(255, 255, 255, 0.6);
+  background-color: rgba(0, 0, 0, 0.6);
+}
+.navbar .logo {
+  font-size: 2.5ch;
+  margin: 0 2rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+.navbar .logo:hover {
+  color: #fff;
+}
+.navbar .logo:active {
+  color: rgba(255, 255, 255, 0.6);
+}
+.navbar .navbar-links ul {
+  margin: 0;
+  padding: 0;
+  display: flex;
+}
+.navbar .navbar-links ul li {
+  letter-spacing: 0.5px;
+  list-style: none;
+}
+.navbar .navbar-links ul li.active a {
+  color: #fff;
+}
+.navbar .navbar-links ul li a {
+  color: rgba(255, 255, 255, 0.6);
+  padding: 0 1rem;
+  transition: color 100ms ease-in;
+}
+.navbar .navbar-links ul li a:hover {
+  color: #fff;
+}
+
+.hamburger {
+  cursor: pointer;
+  position: absolute;
+  top: 1.3rem;
+  right: 2rem;
+  display: none;
+  flex-direction: column;
+  justify-content: space-between;
+  width: 28px;
+  height: 21px;
+}
+.hamburger .bar {
+  height: 3px;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+@media (max-width: 1024px) {
+  .hamburger {
+    display: flex;
+  }
+  .navbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .navbar-links {
+    display: none;
+    width: 100%;
+  }
+  .navbar-links ul {
+    flex-direction: column;
+    width: 100%;
+  }
+  .navbar-links ul li {
+    letter-spacing: 0.5cm;
+    text-align: center;
+    margin: 0.5rem 0;
+  }
+  .navbar-links.burger-active {
+    display: flex;
+  }
+}
+.head-container {
+  width: 100%;
+  height: 20rem;
+  position: relative;
+  overflow: hidden;
+}
+.head-container::before {
+  content: "";
+  position: absolute;
+  /* make very large so rotation covers all aspect ratios and view widths */
+  top: -100%;
+  left: -100%;
+  width: 300%;
+  height: 300%;
+  background-image: url("./img/hand.png");
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: center center;
+  transform: rotate(90deg);
+  transform-origin: center;
+  z-index: 0;
+  pointer-events: none;
+  will-change: transform;
+}
+.head-container {
+  /* dark overlay above the image */
+}
+.head-container::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 1;
+  pointer-events: none;
+}
+.head-container {
+  /* ensure direct children render above the overlay */
+}
+.head-container > * {
+  position: relative;
+  z-index: 2;
+}/*# sourceMappingURL=styles.css.map */

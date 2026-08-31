@@ -1,16 +1,17 @@
 $seeThroughBlack: rgba(0, 0, 0, 0.6);
 $seeThroughWhite: rgba(255, 255, 255, 0.6);
 
-$burningOrange: #ff464b;
-
-$flareBgColor: linear-gradient(to right, rgb(241, 39, 17), rgb(245, 175, 25));
-$burningOrangeBgColor: linear-gradient(to right, rgb(255, 65, 108), rgb(255, 75, 43));
+$bgDark: #0f172a;
+$bgLight: #1e293b;
+$textMain: #e0e0e0;
+$textAccent: #60a5fa;
+$border: #334155;
 
 body {
     text-align: center;
     margin: 0;
-    background: $burningOrangeBgColor;
-    color: #fff;
+    background: $bgDark;
+    color: $textMain;
     overflow-x: hidden;
     font-family: "Poppins", sans-serif;
 }

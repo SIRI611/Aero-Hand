@@ -4,7 +4,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aero Hand Project</title>
+    <meta name="description" content="Documentation for the TetherIA Aero Hand Open Isaac Lab grasp-and-hold project.">
+    <title>TetherIA Aero Hand Open — Documentation</title>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -17,7 +18,7 @@
 
 <body>
     <nav class="navbar">
-        <a href="#" class="logo">#</a>
+        <a href="#top" class="logo">#</a>
 
         <div class="hamburger">
             <div class="bar bar-one"></div>
@@ -27,37 +28,483 @@
 
         <div class="navbar-links">
             <ul>
-                <li><a href="#about" class="nav-link">About</a></li>
+                <li><a href="#overview" class="nav-link">Overview</a></li>
+                <li><a href="#architecture" class="nav-link">Architecture</a></li>
+                <!-- <li><a href="#action-space" class="nav-link">Action Space</a></li>
+                <li><a href="#observations-rewards" class="nav-link">Observations &amp; Rewards</a></li>
+                <li><a href="#objects" class="nav-link">Objects</a></li>
+                <li><a href="#simulation" class="nav-link">Simulation</a></li> -->
+                <li><a href="#software" class="nav-link">Software</a></li>
                 <li><a href="#hardware" class="nav-link">Hardware</a></li>
-                <li><a href="#software" class="nav-link ">Software</a></li>
+                <li><a href="#troubleshooting" class="nav-link">Troubleshooting</a></li>
             </ul>
         </div>
     </nav>
 
     <div class="body-container">
-        <section class="head-container">
-            <h1>Aero Hand Project</h1>
+
+        <section class="head-container" id="top">
+            <h1>TetherIA Aero Hand Open</h1>
+            <p class="subtitle">An Isaac Lab port of the Aero Hand for a grasp-and-hold task — close around an object,
+                hold it against gravity, don't drop it.</p>
         </section>
 
-        <section class="content-container" id="about">
-            <h2>About</h2>
-            <p>The Aero Hand Project aims to create a prosthetic hand that is lightweight, efficient, and capable of
-                performing a wide range of tasks. By leveraging aerodynamic design, we can enhance the performance and
-                comfort of the prosthetic hand for users.</p>
+        <section class="content-container" id="overview">
+            <h2>Overview</h2>
+            <p>The hand mounts pointing straight down, closes around an object, and has to keep holding it against
+                gravity for the whole episode. Four objects share one codebase — mug, bottle, card, and pen — each with
+                its own tuned config and environment file, but the same hand model, action space, and reward structure
+                underneath.</p>
+            <p>The action space, observations, and rewards follow the conventions from TetherIA's own official
+                environment (a cube-rotation task in <code>mujoco_playground</code>): tendon-space control and
+                torque/energy-aware rewards, reused here even though TetherIA hasn't published a grasp task of their
+                own.</p>
+            <p>A separate <code>real_hand/</code> directory drives the physical hand over ROS2, using the exact same
+                7-number action convention as the simulated policy, so a trained policy can move to hardware without a
+                translation layer in between.</p>
+
+            <div class="stat-row">
+                <div class="stat">
+                    <p class="stat-value">7</p>
+                    <p class="stat-label">tendon actuators</p>
+                </div>
+                <div class="stat">
+                    <p class="stat-value">68</p>
+                    <p class="stat-label">observation dims</p>
+                </div>
+                <div class="stat">
+                    <p class="stat-value">4</p>
+                    <p class="stat-label">objects — mug, bottle, card, pen</p>
+                </div>
+                <div class="stat">
+                    <p class="stat-value">60 Hz</p>
+                    <p class="stat-label">sim policy</p>
+                </div>
+                <div class="stat">
+                    <p class="stat-value">100 Hz</p>
+                    <p class="stat-label">real hand</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="content-container" id="architecture">
+            <h2>Architecture</h2>
+            <p>Most of the codebase is shared across all four objects — only a handful of files and values actually
+                change per object.</p>
+
+            <div class="compare-grid">
+                <div class="compare-col">
+                    <h3>Shared by every object</h3>
+                    <ul>
+                        <li>Hand asset &amp; actuator gains</li>
+                        <li>7-tendon action mapping</li>
+                        <li>68-dim observation layout</li>
+                        <li>Reward structure (which terms exist)</li>
+                        <li>Orientation-tuning workflow</li>
+                    </ul>
+                </div>
+                <div class="compare-col">
+                    <h3>Tuned per object</h3>
+                    <ul>
+                        <li>Object config — USD, mass, spawn offset</li>
+                        <li>Tuned grasp pose</li>
+                        <li>Drop-height threshold</li>
+                        <li>Two reward scale values</li>
+                        <li>Torque / energy / pose reward tuning</li>
+                    </ul>
+                </div>
+            </div>
+
+            <h3>File layout</h3>
+            <div class="file-list">
+                <div class="file-item">
+                    <p class="file-name"><code>aero_hand_cfg.py</code></p>
+                    <p class="file-desc">Hand asset, actuator gains, and base orientation — identical for every object.
+                    </p>
+                </div>
+                <div class="file-item">
+                    <p class="file-name"><code>aero_hand_scene_cfg.py</code></p>
+                    <p class="file-desc">Thin scene wrapper: ground plane, light, N cloned hands. Not object-specific.
+                    </p>
+                </div>
+                <div class="file-item">
+                    <p class="file-name"><code>&lt;object&gt;_cfg.py</code></p>
+                    <p class="file-desc">One per object — USD path, mass, and spawn offset relative to the hand.</p>
+                </div>
+                <div class="file-item">
+                    <p class="file-name"><code>&lt;object&gt;_grasp_env.py</code></p>
+                    <p class="file-desc">The actual <code>DirectRLEnv</code>: actions, observations, rewards, resets.
+                        Same shape in every variant, with the object's name swapped in.</p>
+                </div>
+                <div class="file-item">
+                    <p class="file-name"><code>test.py</code></p>
+                    <p class="file-desc">Loads a variant's tuned grasp pose across N envs to eyeball the grip — no RL
+                        loop. (Named <code>test_sim.py</code> in <code>mug/</code> to avoid clashing with
+                        <code>real_hand/test_ros.py</code>.)</p>
+                </div>
+                <div class="file-item">
+                    <p class="file-name"><code>run_aero_hand_parallel.py</code></p>
+                    <p class="file-desc">Bare hand-only scene check — no object, no RL, just cloned hands curling open
+                        and closed.</p>
+                </div>
+            </div>
+
+            <h3>Hardware files — <code>real_hand/</code></h3>
+            <p>Everything that talks to the physical hand lives here and nowhere else — it's object-agnostic, so it sits
+                at the top level instead of being copied into each variant.</p>
+            <div class="file-list">
+                <div class="file-item">
+                    <p class="file-name"><code>real_hand/aero_hand_bridge.py</code></p>
+                    <p class="file-desc">Talks to the real hand over ROS2 in the same 7-actuator convention as the sim.
+                        Also reconstructs joint angles from motor feedback, since the hardware has no joint encoders.
+                        Its coupling constants have to match every <code>&lt;object&gt;_grasp_env.py</code>.</p>
+                </div>
+                <div class="file-item">
+                    <p class="file-name"><code>real_hand/test_ros.py</code></p>
+                    <p class="file-desc">A scripted demo — finger wave, counting, thumb opposition — that doubles as an
+                        end-to-end hardware check.</p>
+                </div>
+            </div>
+
+            <p>Variant scripts import the bridge from their own directory like this:</p>
+            <pre><code>import pathlib, sys
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "real_hand"))
+from aero_hand_bridge import AeroHandBridge</code></pre>
+
+            <h3>Before you train</h3>
+            <p>A few values are still placeholders and worth checking first: <code>_DOWNWARD_FACING_EULER_DEG</code>,
+                <code>stiffness</code>, and <code>effort_limit_sim</code> in <code>aero_hand_cfg.py</code> (shared);
+                object mass and spawn <code>pos</code> in each <code>&lt;object&gt;_cfg.py</code>; and
+                <code>rew_scale_torques</code> / <code>rew_scale_energy</code> in each
+                <code>&lt;object&gt;_grasp_env.py</code>, which need verifying against real torque magnitudes once you
+                can log them.</p>
+        </section>
+
+        <section class="content-container" id="action-space">
+            <h2>The 7-tendon action space</h2>
+            <p>The real hand has 7 motors driving 16 joints through tendons, so it's under-actuated by design — many
+                joints are mechanically forced to move together. The policy outputs 7 normalized values, one per
+                actuator, and each is broadcast to every joint it physically drives:</p>
+
+            <div class="actuator-map">
+                <div class="actuator-row"><code class="actuator-name">right_thumb_cmc_abd_act</code><span
+                        class="actuator-joints">thumb base abduction</span></div>
+                <div class="actuator-row"><code class="actuator-name">right_thumb_cmc_flex_act</code><span
+                        class="actuator-joints">thumb base flexion</span></div>
+                <div class="actuator-row"><code class="actuator-name">right_thumb_tendon_act</code><span
+                        class="actuator-joints">thumb mcp + ip</span></div>
+                <div class="actuator-row"><code class="actuator-name">right_index_tendon_act</code><span
+                        class="actuator-joints">index mcp + pip + dip</span></div>
+                <div class="actuator-row"><code class="actuator-name">right_middle_tendon_act</code><span
+                        class="actuator-joints">middle mcp + pip + dip</span></div>
+                <div class="actuator-row"><code class="actuator-name">right_ring_tendon_act</code><span
+                        class="actuator-joints">ring mcp + pip + dip</span></div>
+                <div class="actuator-row"><code class="actuator-name">right_pinky_tendon_act</code><span
+                        class="actuator-joints">pinky mcp + pip + dip</span></div>
+            </div>
+
+            <p>This mirrors TetherIA's own "compact representation" from their SDK docs, reimplemented in Isaac Lab as a
+                broadcast matrix, since PhysX doesn't model MuJoCo-style tendons directly.</p>
+
+            <h3>Independent vs. forced-equal joints</h3>
+            <p>Only the two thumb-base joints move independently. The rest fall into five 3-joint clusters — thumb tip,
+                index, middle, ring, pinky — where every joint in a cluster is forced to the same commanded angle. The
+                grouping is fixed by the hand's mechanics and identical across objects; only the angles being averaged
+                change with each object's tuned grasp pose. Pinch grasps (card, pen) tend to want a bigger gap between
+                mcp and pip/dip than power grasps (mug, bottle), since a pinch relies more on independent fingertip
+                placement — exactly the precision this coupling gives up.</p>
+
+            <div class="callout callout-note">
+                <p><strong>Caveat.</strong> This matches TetherIA's documented compact representation, but the real
+                    hardware's thumb coupling is actually more complex — moving one thumb actuator physically tugs on
+                    the others, nonlinearly. That deeper coupling isn't reproduced here, and Isaac Lab doesn't simulate
+                    real tendons either, so this is an approximation of an approximation — good enough to train a policy
+                    that speaks the same 7-number language as the real hand, not a physically exact model of the cables.
+                </p>
+            </div>
+
+            <p>The reset pose (<code>grasp_joint_pos</code>) still sets all 16 joints directly at the start of each
+                episode — only the ongoing control during the episode goes through the 7-number action space.</p>
+        </section>
+
+        <section class="content-container" id="observations-rewards">
+            <h2>Observations &amp; rewards</h2>
+
+            <h3>Observations — 68 dims</h3>
+            <p>Same layout for every object; only the values coming from the loaded object differ.</p>
+            <div class="obs-groups">
+                <div class="obs-group">
+                    <h4>Hand state — 55 dims</h4>
+                    <div class="obs-list">
+                        <div class="obs-item"><span class="obs-size">16</span><span class="obs-name">Joint
+                                positions</span></div>
+                        <div class="obs-item"><span class="obs-size">16</span><span class="obs-name">Joint
+                                velocities</span></div>
+                        <div class="obs-item"><span class="obs-size">16</span><span class="obs-name">Joint torques (PD
+                                estimate)</span></div>
+                        <div class="obs-item"><span class="obs-size">7</span><span class="obs-name">Previous
+                                action</span></div>
+                    </div>
+                </div>
+                <div class="obs-group">
+                    <h4>Object state — 13 dims</h4>
+                    <div class="obs-list">
+                        <div class="obs-item"><span class="obs-size">3</span><span class="obs-name">Position, relative
+                                to hand</span></div>
+                        <div class="obs-item"><span class="obs-size">3</span><span class="obs-name">Linear
+                                velocity</span></div>
+                        <div class="obs-item"><span class="obs-size">3</span><span class="obs-name">Angular
+                                velocity</span></div>
+                        <div class="obs-item"><span class="obs-size">4</span><span class="obs-name">Orientation
+                                (quaternion)</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <h3>Rewards</h3>
+            <p>Named after TetherIA's own reward terms, adapted from "rotate as fast as possible" to "hold still without
+                dropping." The structure is shared across objects; two scale names embed the object's name and get tuned
+                per variant.</p>
+            <div class="reward-list">
+                <div class="reward-item">
+                    <p class="reward-name">Held <code class="reward-field">rew_scale_&lt;object&gt;_height</code></p>
+                    <p class="reward-desc">Reward each step the object hasn't dropped past the threshold.</p>
+                </div>
+                <div class="reward-item">
+                    <p class="reward-name">Stillness <code class="reward-field">rew_scale_&lt;object&gt;_still</code>
+                    </p>
+                    <p class="reward-desc">Penalizes object movement, for a steady, non-wobbly grasp.</p>
+                </div>
+                <div class="reward-item">
+                    <p class="reward-name">Action rate</p>
+                    <p class="reward-desc">Penalizes jerky tendon commands between steps.</p>
+                </div>
+                <div class="reward-item">
+                    <p class="reward-name">Pose</p>
+                    <p class="reward-desc">Pulls the 16-joint hand shape back toward its tuned grasp pose.</p>
+                </div>
+                <div class="reward-item">
+                    <p class="reward-name">Torques &amp; energy</p>
+                    <p class="reward-desc">Penalize actuator effort and wasted mechanical power. Placeholder scales —
+                        tune per object.</p>
+                </div>
+                <div class="reward-item">
+                    <p class="reward-name">Drop penalty</p>
+                    <p class="reward-desc">Flat penalty applied every step the object counts as dropped.</p>
+                </div>
+            </div>
+            <p>Each object defines its own drop-height threshold — how far it can sink from its reset height before it
+                counts as dropped — since a few centimeters means something very different for a pen than a bottle.</p>
+
+            <h3>Hand orientation</h3>
+            <p>The hand's downward-facing base rotation lives in <code>aero_hand_cfg.py</code> as an Euler angle rather
+                than a raw quaternion, so it's easy to nudge by eye — the same workflow used for tuning a grasp pose or
+                an object's spawn offset.</p>
+        </section>
+
+        <section class="content-container" id="objects">
+            <h2>Object variants</h2>
+            <p>Each of the four variants — mug, bottle, card, pen — customizes the same few things:</p>
+            <ul>
+                <li>Its own object config: USD path, mass, spawn offset.</li>
+                <li>A tuned grasp pose, eyeballed with <code>test.py</code>.</li>
+                <li>A spawn offset that places the object inside the closed grip for its own geometry.</li>
+                <li>A drop-height threshold sized to the object.</li>
+                <li>Reward scale tuning — pinch grasps (card, pen) want different regularization than power grasps (mug,
+                    bottle).</li>
+            </ul>
+
+            <h3>3D model reference photos</h3>
+            <p class="placeholder-note">Photo slots below — drop in renders or photos of each object's 3D model.</p>
+            <!--
+  To add a real photo, replace the .photo-placeholder div inside a .photo-card with an <img>, e.g.:
+  <img src="images/objects/mug.jpg" alt="Mug — 3D model" class="photo-img">
+-->
+            <div class="photo-grid" id="object-photos">
+                <figure class="photo-card">
+                    <div class="photo-placeholder"><span>Photo</span></div>
+                    <figcaption>Mug — 3D model</figcaption>
+                </figure>
+                <figure class="photo-card">
+                    <div class="photo-placeholder"><span>Photo</span></div>
+                    <figcaption>Bottle — 3D model</figcaption>
+                </figure>
+                <figure class="photo-card">
+                    <div class="photo-placeholder"><span>Photo</span></div>
+                    <figcaption>Card — 3D model</figcaption>
+                </figure>
+                <figure class="photo-card">
+                    <div class="photo-placeholder"><span>Photo</span></div>
+                    <figcaption>Pen — 3D model</figcaption>
+                </figure>
+            </div>
+
+            <div class="callout">
+                <p><strong>Possible refactor.</strong> If keeping four near-identical env files becomes a hassle, they
+                    could collapse into one generic env class, fed by four small per-object configs instead of four full
+                    copies.</p>
+            </div>
+        </section>
+
+        <section class="content-container" id="simulation">
+            <h2>Running the simulation</h2>
+
+            <h3>Sanity-checking the scene</h3>
+            <pre><code>./isaaclab.sh -p run_aero_hand_parallel.py --num_envs 100</code></pre>
+            <p>No object, no grasp env, no RL — just N cloned hands driven by one shared curl, with a random reset every
+                300 steps. It confirms cloning, joint control, and reset plumbing before layering an object or the grasp
+                env on top. Good first thing to run in a new setup.</p>
+
+            <p class="placeholder-note">Photo slots below — drop in screenshots of the parallel simulation setup in
+                Isaac Lab.</p>
+            <!--
+  To add a real photo, replace the .photo-placeholder div inside a .photo-card with an <img>, e.g.:
+  <img src="images/sim/parallel-envs.jpg" alt="Parallel environments in Isaac Lab" class="photo-img">
+  Duplicate the .photo-card block for as many screenshots as you have.
+-->
+            <div class="photo-grid" id="sim-photos">
+                <figure class="photo-card">
+                    <div class="photo-placeholder"><span>Photo</span></div>
+                    <figcaption>Parallel environments (run_aero_hand_parallel.py)</figcaption>
+                </figure>
+                <figure class="photo-card">
+                    <div class="photo-placeholder"><span>Photo</span></div>
+                    <figcaption>Tuned grasp pose (test.py)</figcaption>
+                </figure>
+            </div>
+
+            <h3>Checking a tuned grasp pose</h3>
+            <pre><code># visually check the tuned grasp pose across N envs, no RL loop
+python test.py --num_envs 100
+
+# fewer envs for faster iteration while tuning
+python test.py --num_envs 9</code></pre>
+            <p>Point <code>test.py</code> at whichever variant you want to check. Unlike the parallel sanity check, this
+                goes through the real <code>AeroHandGraspEnv</code> — object included, actions passed through the actual
+                tendon mapping — so you can eyeball whether the grip actually holds.</p>
+
+            <h3>Training</h3>
+            <p>Every variant behaves like any other Isaac Lab <code>DirectRLEnv</code> — 7 actions, 68 observations — so
+                it drops into whatever PPO setup you're already using, just with a smaller action space than the
+                original 16-joint version.</p>
         </section>
 
         <section class="content-container" id="hardware">
-            <h2>Hardware</h2>
-            <p>The hardware components of the Aero Hand are designed with precision and durability in mind. Each part is
-                engineered to provide optimal functionality while maintaining a lightweight profile.</p>
+            <h2>Running on the real hand</h2>
+            <p>The bridge speaks the same 7-actuator, radians convention the sim policy outputs, so nothing needs
+                converting between the two.</p>
+
+            <h3>One-time setup</h3>
+            <p>Requires ROS2 Humble, the <code>aero-hand-open</code> workspace, and the <code>aero_open_sdk</code>
+                Python package.</p>
+            <p>The SDK needs a small patch to talk to the hand over USB: the hand's chip holds itself in reset until it
+                sees DTR and RTS explicitly released, which pyserial doesn't do by default — without the fix, every
+                command dies with <code>ACK (opcode 0x31) not received</code>. Add a wake sequence to
+                <code>AeroHand.__init__</code> before its first command:</p>
+            <pre><code>self.ser.dtr, self.ser.rts = True, True
+time.sleep(0.3)
+self.ser.dtr, self.ser.rts = False, False   # release EN, chip boots
+time.sleep(0.3)
+self.ser.dtr, self.ser.rts = True, False    # run mode
+time.sleep(1.0)                             # let it boot before talking</code></pre>
+            <p>The SDK also installs as a non-editable copy by default, so patch it via an editable install:</p>
+            <pre><code>pip install -e /path/to/aero-hand-open/sdk</code></pre>
+
+            <h3>Starting the hardware node</h3>
+            <pre><code>ros2 run aero_hand_open aero_hand_node --ros-args \
+    -p right_port:=auto -p control_space:=joint</code></pre>
+            <p>Use <code>right_port:=auto</code> — the wake sequence causes the device to re-enumerate, so the port
+                number moves around. Only run one node at a time; a second instance resets the chip out from under the
+                first.</p>
+
+            <h3>Network isolation</h3>
+            <p>A FastDDS profile pointed at another machine will silently let you see, and command, that machine's hand
+                instead of your own. Force local-only discovery:</p>
+            <pre><code>unset FASTRTPS_DEFAULT_PROFILES_FILE
+export ROS_LOCALHOST_ONLY=1
+ros2 daemon stop        # the daemon caches discovery config</code></pre>
+            <p>Shell startup files only apply to newly opened terminals, so a stale terminal is the usual culprit if
+                this stops working after being "fixed."</p>
+
+            <h3>The bridge API</h3>
+            <pre><code>with AeroHandBridge() as hand:
+    hand.send_actuator_positions([0.0, 0.3, 0.35, 0.6, 0.6, 0.6, 0.6])
+    hand.spin_once(timeout_sec=0.0)
+
+    actuators = hand.get_actuator_feedback()   # 7,  radians, same space as the command
+    joints    = hand.get_joint_feedback()      # 16, radians, JOINT_NAMES order
+    motors    = hand.get_motor_feedback()      # 7,  radians, raw hardware
+    currents  = hand.get_actuator_current_feedback()   # 7, mA, torque proxy</code></pre>
+
+            <p>Travel limits, clamped silently by <code>send_actuator_positions</code>:</p>
+            <div class="spec-list">
+                <div class="spec-row"><span class="spec-label">Thumb abduction</span><span class="spec-value">≤ 1.745
+                        rad</span></div>
+                <div class="spec-row"><span class="spec-label">Thumb flexion</span><span class="spec-value">≤ 0.956
+                        rad</span></div>
+                <div class="spec-row"><span class="spec-label">Thumb tip</span><span class="spec-value">≤ 2.618
+                        rad</span></div>
+                <div class="spec-row"><span class="spec-label">Index / middle / ring / pinky</span><span
+                        class="spec-value">≤ 1.571 rad</span></div>
+            </div>
+
+            <p>The hardware has no joint encoders — it only reports 7 motor angles. <code>get_joint_feedback()</code>
+                reconstructs the 16 joint angles by inverting the tendon model; it's accurate but blind to tendon
+                stretch or a finger physically blocked by the object. For real contact sensing, use
+                <code>get_actuator_current_feedback()</code> (motor current).</p>
+            <p>Motor-space and actuator-space readings aren't the same number — compare against what you sent using
+                <code>get_actuator_feedback()</code>, not <code>get_motor_feedback()</code>, which is the raw
+                gear-reduced value. Expect a percent or two of tracking error on the fingers and a bit more on the thumb
+                — ordinary servo and tendon compliance, not a units bug.</p>
+
+            <h3>Control rates</h3>
+            <div class="spec-list">
+                <div class="spec-row"><span class="spec-label">Hand sensing</span><span class="spec-value">100 Hz</span>
+                </div>
+                <div class="spec-row"><span class="spec-label">Hand commands</span><span
+                        class="spec-value">event-driven, unthrottled</span></div>
+                <div class="spec-row"><span class="spec-label">Sim policy</span><span class="spec-value">60 Hz</span>
+                </div>
+            </div>
+            <p>Align the 60 Hz sim with the 100 Hz hand before pushing a policy to hardware — e.g.
+                <code>decimation = 1</code> for 120 Hz, or drop <code>feedback_frequency</code> to 60. Commanding a 100
+                Hz hand at 60 Hz is otherwise fine, since commands latch until the next one arrives.</p>
+
+            <h3>Demo</h3>
+            <pre><code>python3 real_hand/test_ros.py</code></pre>
+            <p>About 25 seconds of finger wave, counting, thumb opposition, and a slow clench, streamed at 100 Hz with
+                smoothstep easing. <code>Ctrl+C</code> glides back to an open palm instead of freezing mid-pose. The
+                pinch poses are geometric estimates, not measured — nudge them if a pinch misses on your unit.</p>
         </section>
 
-        <section class="content-container" id="software">
-            <h2>Software</h2>
-            <p>The software for the Aero Hand is developed to ensure seamless integration with the hardware components.
-                It provides intuitive controls and real-time feedback to enhance the user experience.</p>
+        <section class="content-container" id="troubleshooting">
+            <h2>Troubleshooting</h2>
+            <div class="trouble-list">
+                <div class="trouble-item">
+                    <p class="trouble-symptom"><code>ACK (opcode 0x31) not received</code></p>
+                    <p class="trouble-cause">Missing DTR/RTS wake sequence, or the SDK patch isn't actually live
+                        (non-editable install).</p>
+                </div>
+                <div class="trouble-item">
+                    <p class="trouble-symptom">No feedback from hand, or topics listed but no data</p>
+                    <p class="trouble-cause">A stale terminal still has the FastDDS unicast profile set — open a new
+                        shell and run <code>ros2 daemon stop</code>.</p>
+                </div>
+                <div class="trouble-item">
+                    <p class="trouble-symptom">Node starts, then reads fail</p>
+                    <p class="trouble-cause">Two nodes running — the second reset the chip, which re-enumerated to a new
+                        device path.</p>
+                </div>
+                <div class="trouble-item">
+                    <p class="trouble-symptom">Feedback looks ~2.5× too big</p>
+                    <p class="trouble-cause">Reading <code>get_motor_feedback()</code> where
+                        <code>get_actuator_feedback()</code> was meant.</p>
+                </div>
+            </div>
         </section>
+
     </div>
+
 </body>
 
 </html>

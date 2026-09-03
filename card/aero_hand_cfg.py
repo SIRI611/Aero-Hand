@@ -6,7 +6,7 @@ from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.assets import ArticulationCfg
 
 AERO_HAND_USD_PATH = (
-    "/media/hao/4620a2f2-b93d-4497-8c10-57bb7c636ebe/Hao/BEHAVIOR-1K/datasets/omnigibson-robot-assets/models/aero_hand/usd/aero_hand.usda"
+    "../hand_model/aero_hand.usda"
 )
 
 AERO_HAND_CFG = ArticulationCfg(

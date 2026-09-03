@@ -2,7 +2,7 @@
 import isaaclab.sim as sim_utils
 from isaaclab.assets import RigidObjectCfg
 
-BOTTLE_USD_PATH = "/home/hao/Documents/aero-hand-open/sim_rl/simulation/mujoco/only_bottle.usda"
+BOTTLE_USD_PATH = "../hand_model/only_bottle.usda"
 
 BOTTLE_CFG = RigidObjectCfg(
     spawn=sim_utils.UsdFileCfg(
@@ -23,7 +23,7 @@ BOTTLE_CFG = RigidObjectCfg(
 # import isaaclab.sim as sim_utils
 # from isaaclab.assets import RigidObjectCfg
 
-# BOTTLE_USD_PATH = "/home/hao/Documents/aero-hand-open/sim_rl/simulation/mujoco/only_bottle.usda"
+# BOTTLE_USD_PATH = "../hand_model/only_bottle.usda"
 
 # BOTTLE_CFG = RigidObjectCfg(
 #     spawn=sim_utils.UsdFileCfg(

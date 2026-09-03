@@ -18,7 +18,11 @@ Variant scripts run from their own directory, so reach it with:
     from aero_hand_bridge import AeroHandBridge
 
 Assumes aero_hand_node (the hardware node) is already running and publishing
-on /{side}/actuator_states, /{side}/joint_control.
+on /{side}/actuator_states, /{side}/joint_control. If not, run the command:
+    
+    ros2 run aero_hand_open aero_hand_node --ros-args -p right_port:=auto -p control_space:=joint
+
+to begin publishing actuator states and accepting joint targets. The node will auto-detect the hand on USB and start streaming.
 
 NOTE ON FEEDBACK: the hardware publishes ONLY raw motor angles (ActuatorStates.
 actuations, 7 values, degrees). It does not publish joint positions -- the SDK's

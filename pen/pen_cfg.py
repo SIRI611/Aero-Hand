@@ -2,7 +2,7 @@
 # import isaaclab.sim as sim_utils
 # from isaaclab.assets import RigidObjectCfg
 
-# PEN_USD_PATH = "/home/hao/Documents/aero-hand-open/sim_rl/simulation/mujoco/only_pen.usda"
+# PEN_USD_PATH = "../hand_model/only_pen.usda"
 
 # PEN_CFG = RigidObjectCfg(
 #     spawn=sim_utils.UsdFileCfg(
@@ -23,7 +23,7 @@
 import isaaclab.sim as sim_utils
 from isaaclab.assets import RigidObjectCfg
 
-PEN_USD_PATH = "/home/hao/Documents/aero-hand-open/sim_rl/simulation/mujoco/only_pen.usda"
+PEN_USD_PATH = "../hand_model/only_pen.usda"
 
 PEN_CFG = RigidObjectCfg(
     spawn=sim_utils.UsdFileCfg(

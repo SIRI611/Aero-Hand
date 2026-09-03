@@ -2,7 +2,7 @@
 import isaaclab.sim as sim_utils
 from isaaclab.assets import RigidObjectCfg
 
-MUG_USD_PATH = "/home/hao/Documents/aero-hand-open/sim_rl/simulation/mujoco/only_cup.usda"
+MUG_USD_PATH = "../hand_model/only_cup.usda"
 
 MUG_CFG = RigidObjectCfg(
     spawn=sim_utils.UsdFileCfg(
@@ -14,10 +14,6 @@ MUG_CFG = RigidObjectCfg(
         mass_props=sim_utils.MassPropertiesCfg(mass=0.371),   # PLACEHOLDER — set to your real mug's mass
     ),
     init_state=RigidObjectCfg.InitialStateCfg(
-        # PLACEHOLDER — tuned for the OLD hand orientation. Now that the hand points down
-        # (see aero_hand_cfg.py's _DOWNWARD_FACING_EULER_DEG), this offset almost certainly
-        # needs to be re-tuned so the mug actually spawns inside the new downward grasp —
-        # watch the viewport at reset the same way you did before.
         pos=(-0.11, 0.0, 0.85),
     ),
 )   
@@ -26,7 +22,7 @@ MUG_CFG = RigidObjectCfg(
 # import isaaclab.sim as sim_utils
 # from isaaclab.assets import RigidObjectCfg
 
-# MUG_USD_PATH = "/home/hao/Documents/aero-hand-open/sim_rl/simulation/mujoco/only_cup.usda"
+# MUG_USD_PATH = "../hand_model/only_cup.usda"
 
 # MUG_CFG = RigidObjectCfg(
 #     spawn=sim_utils.UsdFileCfg(

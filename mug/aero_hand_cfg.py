@@ -25,7 +25,7 @@ AERO_HAND_CFG = ArticulationCfg(
     ),
     init_state=ArticulationCfg.InitialStateCfg(
         pos=(0.0, 0.0, 1.0),   # lift off the ground plane
-        rot=(0.173648, 0.0, 0.984807, 0.0),  # 20 deg about +X axis to face the camera
+        rot=(0.173648, 0.0, 0.984807, 0.0),  
         joint_pos={
             "right_index_mcp_flex": 0.0,
             "right_index_pip": 0.0,

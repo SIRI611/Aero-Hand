@@ -187,35 +187,6 @@ a {
     overflow: hidden;
     padding: 7rem 1.5rem 5rem;
 
-    &::before {
-        content: "";
-        position: absolute;
-        /* make very large so rotation covers all aspect ratios and view widths */
-        top: -100%;
-        left: -100%;
-        width: 300%;
-        height: 300%;
-        background-image: url('./img/hand.png');
-        background-repeat: no-repeat;
-        background-size: cover;
-        background-position: center center;
-        transform: rotate(90deg);
-        transform-origin: center;
-        z-index: 0;
-        pointer-events: none;
-        will-change: transform;
-    }
-
-    /* dark overlay above the image */
-    &::after {
-        content: "";
-        position: absolute;
-        inset: 0;
-        background: $seeThroughBlack;
-        z-index: 1;
-        pointer-events: none;
-    }
-
     /* ensure direct children render above the overlay */
     >* {
         position: relative;
@@ -730,7 +701,8 @@ footer {
 }
 
 .photo-placeholder,
-.photo-img {
+.photo-img,
+video {
     width: 100%;
     aspect-ratio: 4 / 3;
     display: flex;

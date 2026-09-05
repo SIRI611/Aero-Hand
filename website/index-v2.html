@@ -49,13 +49,14 @@
 
         <section class="content-container" id="overview">
             <h2>Overview</h2>
-            <p>The hand is bolted in place above the ground, rotated to face downward, and spawns already closed around
-                an object. The task is to hold that object against gravity for the full 10-second episode without
+            <p>The hand is rotated to face downward, and spawns closed around
+                an object. The task is to hold that object against gravity for the full episode duration without
                 dropping it.</p>
-            <p>Four objects exist today: mug, bottle, card, and pen. Each lives in its own directory with its own object
-                config and tuned grasp pose. The hand model, action space, observation layout, and <a
-                    href="#observations-rewards">reward</a> structure are shared and identical between them.</p>
-            
+            <p>Four objects are implemented currently: mug, bottle, card, and pen. Each lives in its own
+                directory with its own object config and tuned grasp pose. The hand model, action space, observation
+                layout, and <a href="#observations-rewards">reward</a> structure are shared and identical between them.
+            </p>
+
             <p>The hand can be mounted on either the Agilex PiPER-X arm, or a sturdy table using custom 3D printed
                 mounts; all of which can be found in the <code>mounts/</code> directory. </p>
 
@@ -66,10 +67,6 @@
                     </figcaption>
                 </figure>
             </div>
-
-            <p>The <code>real_hand/</code> directory drives the physical hand over ROS2 using the same 7-actuator
-                convention and ordering the sim policy outputs, so a trained policy can move to hardware without a
-                translation layer.</p>
 
             <div class="stat-row">
                 <div class="stat">
@@ -100,16 +97,18 @@
 
             <div class="callout callout-note">
                 <p><strong>Note:</strong> The card and pen grasp poses still need work, since they don't hold their
-                    objects reliably in sim. Part of the reason is that a few of their tuned joint values sit outside
-                    the hand's own joint limits, so the pose being <em>held</em> isn't the pose that was tuned. See <a
-                        href="#objects">Object variants</a>.</p>
+                    objects reliably in sim yet. Part of the reason is that a few of their tuned joint values sit
+                    outside the hand's own joint limits, so the pose being held doesn't match the pose that was tuned.
+                    Needs further tuning, or can train a policy to do this. See the
+                    <a href="#objects">object variants</a> section for more information.
+                </p>
             </div>
         </section>
 
         <section class="content-container" id="architecture">
             <h2>Architecture</h2>
-            <p>Each object gets its own directory containing a full copy of the same five files. Only two things
-                genuinely differ between them.</p>
+            <p>Each object gets its own directory containing a full copy of the same five files, with each having slight
+                object-specific differences.</p>
 
             <div class="compare-grid">
                 <div class="compare-col">
@@ -126,8 +125,9 @@
                     <h3>Tuned per object</h3>
                     <ul>
                         <li>Object config: USD, mass, spawn pose</li>
-                        <li>Tuned 16-joint grasp pose</li>
-                        <li>Drop threshold <em>should</em> be sized per object</li>
+                        <li>Tuned 16-joint grasp pose (used only internally; see the <a href="#action-space">action
+                                space</a> section)</li>
+                        <li>Drop threshold; tuned to be sized per object</li>
                         <li>Torque, energy, and pose scales <em>should</em> be tuned per grasp type</li>
                     </ul>
                 </div>
@@ -273,17 +273,24 @@ from aero_hand_bridge import AeroHandBridge</code></pre>
                     </div>
                 </div>
             </div>
-            <p>Two caveats. Joint torque is Isaac Lab's estimate from PD error, not a true measured torque, which is
-                fine as an observation but not as a calibrated sensor. And object position is relative to the hand's
-                articulation <em>root</em>, not the palm or a fingertip.</p>
+
+            <div class="callout callout-note">
+                <p><strong>Note:</strong> Joint torque is Isaac Lab's estimate from PD error, not a true measured
+                    torque, which is fine as an observation but not as a calibrated sensor. And object position is
+                    relative to the hand's articulation <em>root</em> (can be found by loading
+                    <code>hand_model/aero_hand.usda</code> into Isaac Sim), not the palm or a fingertip.
+                </p>
+            </div>
 
             <h3>Rewards</h3>
             <p>Named after TetherIA's own
                 <a target="_blank"
                     href="https://github.com/google-deepmind/mujoco_playground/blob/1bd244fa9c51fa7074c7a449934f556d898f7a15/mujoco_playground/_src/manipulation/aero_hand/rotate_z.py">CubeRotateZAxis</a>
-                reward terms, adapted from "rotate as fast as possible" to "hold still without dropping". Two field
-                names embed the object's name so they can be tuned per variant.
+                example's reward terms, just adapted from the goal of "rotating as fast as possible" to "holding still
+                without dropping". Two field names embed the object's name so they can be tuned per variant.
             </p>
+            <p>An episode ends early when the object sinks more than the drop threshold below its reset height, or
+                after the full 10 seconds.</p>
             <div class="reward-list">
                 <div class="reward-item">
                     <p class="reward-name">Held <code class="reward-field">+5.0</code></p>
@@ -311,9 +318,6 @@ from aero_hand_bridge import AeroHandBridge</code></pre>
                     <p class="reward-desc">Flat penalty every step the object counts as dropped.</p>
                 </div>
             </div>
-            <p>An episode ends early when the object sinks more than the drop threshold below its reset height, or
-                after the full 10 seconds. The threshold is meant to be sized per object, since a few centimetres means
-                something very different for a pen than a bottle, but it is currently 0.15 m for all four.</p>
 
             <h3>Hand orientation</h3>
             <p>The hand is fixed 1 m above the ground with <code>fix_root_link</code>, so only its joints move. Its
@@ -355,20 +359,15 @@ from aero_hand_bridge import AeroHandBridge</code></pre>
                 </div>
                 <div class="file-item">
                     <p class="file-name">Pen</p>
-                    <p class="file-desc"><code>only_pen.usda</code> · 0.034 kg · spawn
+                    <p class="file-desc"><code>only_pen.usda</code> · 0.010 kg · spawn
                         <code>(-0.155, -0.024, 0.965)</code>, rotated 180° · pinch grasp, thumb + index only
                     </p>
                 </div>
             </div>
 
-            <div class="callout callout-note">
-                <p><strong>Currently off-spec:</strong> <code>pen_cfg.py</code> has its testing block active, so the pen
-                    has <em>gravity and collision disabled</em> as checked in. And the bottle's mass is 0.034 kg, the
-                    same number as the pen, which looks like a copy-paste that was never updated.</p>
-            </div>
-
-            <h3>Why the card and pen slip</h3>
-            <p>Three tuned joint values sit outside the hand's own joint limits, so the 7 actuators can't reproduce
+            <h3>To fix: Card and pen slippage</h3>
+            <p>The hand is currently unable to grasp onto the pen or card, as three tuned joint values sit outside the
+                hand's own joint limits, so the 7 actuators can't reproduce
                 them and only the direct reset write can. The grip therefore snaps to a different shape as soon as the
                 first action is applied:</p>
             <div class="spec-list">
@@ -379,8 +378,7 @@ from aero_hand_bridge import AeroHandBridge</code></pre>
                 <div class="spec-row"><span class="spec-label">Pen, index pip</span><span class="spec-value">1.600 rad
                         tuned vs. 1.571 limit</span></div>
             </div>
-            <p>Either bring these inside the limits, or accept that a trained policy has to find its own in-limit grip.
-            </p>
+            <p>Must either bring these inside the limits, or allow a trained policy to find its own in-limit grip.</p>
 
             <h3>3D model reference photos</h3>
 
@@ -423,29 +421,34 @@ python test_sim.py --num_envs 9    # fewer envs = faster reload while tuning</co
                 </p>
             </div>
             <p>This goes through the real <code>AeroHandGraspEnv</code>, with the object included and actions pushed
-                through the actual tendon mapping, so what you see is the pose the actuators can genuinely
+                through the actual tendon mapping, so what you see is the pose the actuators can actually
                 <em>hold</em>, not the 16-joint reset pose. Everything besides <code>--num_envs</code>
                 (<code>--headless</code>, <code>--device</code>, and so on) comes from Isaac Lab's
                 <code>AppLauncher</code>.
             </p>
 
             <h3>Training</h3>
-            <p>Every variant is an ordinary Isaac Lab <code>DirectRLEnv</code> with 7 actions and 68 observations, so
+            <p>Every object variant is an ordinary Isaac Lab <code>DirectRLEnv</code> with 7 actions and 68
+                observations, so
                 it drops into whatever PPO setup you already use. There's no training script or Gym registration in the
                 repo; you instantiate the cfg and env directly, the way <code>test_sim.py</code> does.</p>
 
             <div class="callout callout-note">
                 <p><strong>Before training, check these:</strong></p>
                 <ul>
-                    <li>Delete the debug print block in <code>_apply_action()</code>. It dumps the full control signal
-                        for env 0 on every physics substep and forces a GPU→CPU sync each call.</li>
+                    <li>If needed, comment out/delete the debug print block in <code>_apply_action()</code> in
+                        <code>aero_hand_grasp_env.py</code>. It dumps the full control signal
+                        for env 0 on every physics substep and forces a GPU - CPU sync each call.
+                    </li>
                     <li><code>stiffness</code> and <code>effort_limit_sim</code> in <code>aero_hand_cfg.py</code> are
                         placeholders, never matched to the real servos.</li>
                     <li><code>rew_scale_torques</code> and <code>rew_scale_energy</code> are guesses; verify them
                         against logged torque magnitudes.</li>
                     <li>Restore the pen's real object config (gravity and collision are currently off) and fix the
                         bottle's mass.</li>
-                    <li>Size the drop threshold per object instead of 0.15 m across the board.</li>
+                    <li>Size the drop threshold per object instead of 0.15 m across the board. The threshold is meant to
+                        be sized per object, since a few centimeters means something very different for a pen than a
+                        bottle.</li>
                 </ul>
             </div>
         </section>
@@ -569,7 +572,7 @@ ros2 daemon stop        # the daemon caches discovery config</code></pre>
 
             <div class="photo-grid" id="object-photos">
                 <figure class="photo-card">
-                        <video src="./public/img/hand_demo.MOV" controls>Your browser does not support the video
+                    <video src="./public/img/hand_demo.MOV" controls>Your browser does not support the video
                         tag.</video>
                     <figcaption>Aero Hand demo: finger wave, counting, thumb opposition, and a slow clench.</figcaption>
                 </figure>
